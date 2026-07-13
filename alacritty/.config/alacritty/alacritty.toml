@@ -1,6 +1,9 @@
 [general]
 live_config_reload = true
 
+[env]
+PS1 = '\[\e[38;5;16m\]\u@\h:\w\[\e[0m\]\$ '
+
 [window]
 padding = { x = 8, y = 8 }
 dynamic_padding = true
@@ -28,9 +31,19 @@ style = "Bold"
 [colors]
 cursor = { text = "#000000", cursor = "#d8d8d8" }
 
+#Primary
+[[colors.indexed_colors]]
+index = 16
+color = "#B85D87"
+
+#Secondary
+[[colors.indexed_colors]]
+index = 16
+color = "#270112"
+
 [colors.primary]
-foreground = "#d8d8d8"
-background = "#181818"
+foreground = "#FDF7FB"
+background = "#07070B"
 
 [selection]
 save_to_clipboard = true
