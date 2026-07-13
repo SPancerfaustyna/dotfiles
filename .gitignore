@@ -1,0 +1,17 @@
+# Temporary files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Neovim generated data
+nvim/.local/
+nvim/.cache/
+
+
+
+# Secrets
+*.key
+*.pem
+.env
