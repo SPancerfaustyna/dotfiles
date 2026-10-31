@@ -4,275 +4,353 @@ autoload -Uz add-zsh-hook
 zmodload zsh/datetime
 
 # Symbols
-typeset -g THICK_MINUS=$'\U000f1639'		# 󱘹
-typeset -g THICK_RIGHT_ARROW=$'\U000f0055'	# 󰁕
-typeset -g TOP_RIGHT_CORNER=$'\u2517'		# ┗
-typeset -g END_RIGHT_ARROW=$'\uE0B0'		# 
-typeset -g CHECKMARK=$'\ue63f'			# 
-typeset -g FAILMARK=$'\uf00d'			# 
-typeset -g UP_ARROW=$'\U000f005d'
-typeset -g DOWN_ARROW=$'\U000f0045'
-typeset -g UP_DOWN_ARROW=$'\U000f0e79'
-typeset -g LOCK=$'\uf023'
-typeset -g SEARCH_ICON=$'\ue68f'
-typeset -g DENIED=$'\U000f073a'
-typeset -g TRASHCAN=$'\uf1f8'
-typeset -g QUESTIONMARK=$'\uf128'
+typeset -g NEW_LINE=$'\n'
 
-typeset -g GIT_SYMBOL=$'\uf418'
+typeset -g PROMPT_COMMAND_START_SYMBOL=$'\U000F1639'
+typeset -g PROMPT2_COMMAND_START_SYMBOL=$'\U0002517'
+typeset -g COMMAND_END_SYMBOL=$'\U000F0055'
+typeset -g LEFT_SEPARATOR=$'\uE0B0'
+typeset -g RIGHT_SEPARATOR=$'\uE0B2'
+typeset -g PROMPT_PADDING_SYMBOL='='
 
-# Settings
-# Hostname segment display
-typeset -gi FORCE_SHOW_EXITCODE=${FORCE_SHOW_EXITCODE:-0}
-typeset -gi REPLACE_OTHER_EXITCODE_WITH_SYMBOL=${REPLACE_OTHER_EXITCODE_WITH_SYMBOL:-1}
-typeset -gi FORCE_SHOW_HOSTNAME_SEGMENT=${FORCE_SHOW_HOSTNAME_SEGMENT:-0}
-typeset -gi SHOW_COMMIT_AGE=${SHOW_COMMIT_AGE:-1}
-typeset -gi SHOW_DIRTY_MARKER=${SHOW_DIRTY_MARKER:-1}
+typeset -g DEFAULT_FOREGROUND="#270112"
+typeset -g DEFAULT_BACKGROUND="#B85D87"
+typeset -g PROMPT_BACKGROUND="#270112"
+typeset -g PROMPT_PREFIX_FOREGROUND="#B85D87"
 
-typeset -gi SHOW_EXITCODE_SEGMENT=${SHOW_EXITCODE_SEGMENT:-1}
-typeset -gi SHOW_HOSTNAME_SEGMENT=${SHOW_HOSTNAME_SEGMENT:-1}
-typeset -gi SHOW_DIR_SEGMENT=${SHOW_DIR_SEGMENT:-1}
-typeset -gi SHOW_GIT_SEGMENT=${SHOW_GIT_SEGMENT:-1}
+typeset -gi COMMAND_ON_NEW_LINE=1
+typeset -gi EXTRA_SPACE_PROMPT=1
+typeset -g PROMPT_COMMAND_PREFIX="%F{${PROMPT_PREFIX_FOREGROUND}}${PROMPT_COMMAND_START_SYMBOL}${COMMAND_END_SYMBOL}%f "
+typeset -g PROMPT2_COMMAND_PREFIX="%F{${PROMPT_PREFIX_FOREGROUND}}${PROMPT2_COMMAND_START_SYMBOL}${COMMAND_END_SYMBOL}%f "
 
-promptSetting() {
-	local setting=$1
-	local action=$2
-	local variable
+# Segment order
+# hostname, git, durration, exitCode, directory, Text, project, battery, date, os?, terminal?,
+typeset -ga PROMPT_LEFT_SEGMENTS=(
+	exitCode
+	hostname
+	directory
+	git
+#	project
+#	customText
+#	battery
+#	os
+#	shell
+)
 
-	case $setting in
-		forceExitcode)
-			variable=FORCE_SHOW_EXITCODE
-			;;
-		replaceOtherExitcode)
-			variable=REPLACE_OTHER_EXITCODE_WITH_SYMBOL
-			;;
-		forceHostname)
-			variable=FORCE_SHOW_HOSTNAME_SEGMENT
-			;;
-		commitAge)
-			variable=SHOW_COMMIT_AGE
-			;;
-		dirtyMarker)
-			variable=SHOW_DIRTY_MARKER
-			;;
-		exitcode)
-			variable=SHOW_EXITCODE_SEGMENT
-			;;
-		hostname)
-			variable=SHOW_HOSTNAME_SEGMENT
-			;;
-		dir)
-			variable=SHOW_DIR_SEGMENT
-			;;
-		git)
-			variable=SHOW_GIT_SEGMENT
-			;;
-		*)
-			print -u2 -- "Unknow prompt setting: $setting"
-			return 1
-			;;
-	esac
+typeset -ga PROMPT_RIGHT_SEGMENTS=(
+	commandDuration
+	date
+)
 
-	case $action in
-		enable|on)
-			typeset -g "$variable=1"
-			;;
-		disable|off)
-			typeset -g "$variable=0"
-			;;
-		toggle)
-			local current=${(P)variable}
-			typeset -g "$variable=$(( ! current ))"
-			;;
-		status)
-			local value
-			if (( ${(P)variable} )); then
-				value="true"
-			else
-				value="false"
-			fi
-			print -r -- "$setting: $value"
-			;;
-		*)
-			print -u2 -- "Usage: promptSetting <dir|hostname> <enable|disable|toggle|status>"
-			return 1
-			;;
-	esac
+typeset -gF COMMAND_START_TIME=0
+typeset -gF COMMAND_DURATION=0
 
+# Segment builders
+_buildExitCodeSegment() {
+	local lastStatus=$1
+	reply=("$lastStatus")
 }
 
-# Build prompt	
-typeset -g COMMAND_PROMPT="%F{16}${THICK_MINUS}${THICK_RIGHT_ARROW} %f"
+_buildHostnameSegment() {
+	reply=("%n@%m")
+	SEGMENT_FOREGROUND="yellow"
+	SEGMENT_BACKGROUND="black"
+}
 
-_formatCommitAge() {
-	local -i milliseconds=$1
-
-	if (( milliseconds < 1000 )); then
-		REPLY="${milliseconds}"
-	elif (( milliseconds < 60000 )); then
-		REPLY="$(( milliseconds / 1000 ))s"
-	elif (( milliseconds < 3600000 )); then
-		REPLY="$(( milliseconds / 60000 ))m"
-	elif (( milliseconds < 86400000 )); then
-		REPLY="$(( milliseconds / 3600000 ))h"
-	elif (( milliseconds < 2592000000 )); then
-		REPLY="$(( milliseconds / 86400000 ))d"
-	elif (( milliseconds < 31536000000 )); then
-		REPLY="$(( milliseconds / 2592000000 ))mo"
-	else
-		REPLY="$(( milliseconds / 31536000000 ))y"
-	fi
+_buildDirectorySegment() {
+	reply=("%~")
 }
 
 _buildGitSegment() {
 	local branch
-	local commitTimestamp
-	local commitAge
-	local behind
-	local ahead
-	local symbol
-	local dirtyMarker=""
-
+	git rev-parse --is-inside-work-tree &>/dev/null || {
+		reply=()
+		return
+	}
+	
 	branch=$(git branch --show-current 2>/dev/null)
 
 	if [[ -z $branch ]]; then
 		branch="@$(git rev-parse --short HEAD 2>/dev/null)"
 	fi
 
-	commitTimestamp=$(git log -1 --format=%ct 2>/dev/null)
-
-	if [[ -n $commitTimestamp ]] && (( SHOW_COMMIT_AGE )); then
-		local commitAgeMs=$(( (EPOCHSECONDS - commitTimestamp) * 1000 ))
-		_formatCommitAge "$commitAgeMs"
-		commitAge="${REPLY} "
-	fi
-
-	read -r behind ahead <<< "$( git rev-list --left-right --count '@{upstream}...HEAD' 2>/dev/null )"
-
-	if (( ahead > 0 && behind > 0 )); then
-		symbol="${UP_DOWN_ARROW}"
-	elif (( ahead > 0 )); then
-		symbol="${UP_ARROW}"
-	elif (( behind > 0 )); then
-		symbol="${DOWN_ARROW}"
-	else
-		symbol="${GIT_SYMBOL}"
-	fi
-
-	if [[ -n $(git status --porcelain 2>/dev/null) ]] && (( SHOW_DIRTY_MARKER )); then
-		dirtyMarker="*"
-	fi
-
-	REPLY="${commitAge}${symbol} ${branch}${dirtyMarker}"
+	reply=("$branch")
 }
 
-_buildPrompt() {
-	local lastStatus=$?
+_buildProjectSegment() {
+	reply=(
+		"node"
+		"python"
+	)
+	replyForeground[2]="yellow"
+	replyBackground[2]="blue"
+}
 
-	local beginningOfSegment
-	local endOfSegment
-	
-	local exitCodeSegment
-	local -i canDrawExitCode=1
-	local hostnameSegment
-	local dirSegment
-	local gitSegment
-	local commandDurationSegment
+_buildCommandDurationSegment() {
+	reply=("${COMMAND_DURATION}s") # Temp
+}
 
-	beginningOfSegment="%K{16}%F{17}${END_RIGHT_ARROW} "
-	endOfSegment=" %f%k%K{17}%F{16}${END_RIGHT_ARROW}%f%k"
+_buildCustomTextSegment() {
+	reply=("Text")
+}
 
-	# Set exit code segment
-	exitCodeSegment="%K{16}%F{17} "
-	
-	case $lastStatus in
+_buildBatterySegment() {
+	reply=("100%%")
+}
 
-# 󰌾󰍉󰜺󰆴?
+_buildDateSegment() {
+	reply=("1-08-2026")
+	SEGMENT_FOREGROUND="yellow"
+	SEGMENT_BACKGROUND="black"
+}
 
-		0)	# success
-			exitCodeSegment+="${CHECKMARK}"
-			;;
-		1)	# general failure
-			exitCodeSegment+="${FAILMARK}"
-			;;
-		126)	# found, but not executable
-			exitCodeSegment+="${LOCK}"
-			;;
-		127)	# command not found
-			exitCodeSegment+="${SEARCH_ICON}"
-			;;
-		130)	# interrupted with Ctrl+C
-			exitCodeSegment+="${DENIED}"
-			;;
-		137)	# killed, often SIGKILL
-			exitCodeSegment+="${TRASHCAN}"
-			;;
-		*)	# otther/fallback
-			if (( REPLACE_OTHER_EXITCODE_WITH_SYMBOL )); then
-				exitCodeSegment+="${QUESTIONMARK}"
-			else
-				canDrawExitCode=0
-				exitCodeSegment+="${lastStatus}"
-			fi
-			;;
+_buildOsSegment() {
+	reply=("linux")
+}
+
+_buildShellSegment() {
+	reply=("zsh")
+}
+
+# Segment builder dispatchers
+_dispatchBuildSegment() {
+	local name=$1
+	local lastStatus=$2
+	local -i index
+
+	reply=()
+	replyForeground=()
+	replyBackground=()
+
+	SEGMENT_FOREGROUND=$DEFAULT_FOREGROUND
+	SEGMENT_BACKGROUND=$DEFAULT_BACKGROUND
+
+	case $name in
+		exitCode)			_buildExitCodeSegment "$lastStatus" ;;
+		hostname)			_buildHostnameSegment ;;
+		directory)			_buildDirectorySegment ;;
+		git)				_buildGitSegment ;;
+		project)			_buildProjectSegment ;;
+		commandDuration)	_buildCommandDurationSegment ;;
+		customText)			_buildCustomTextSegment ;;
+		battery)			_buildBatterySegment ;;
+		date)				_buildDateSegment ;;
+		os)					_buildOsSegment ;;
+		shell)				_buildShellSegment ;;
 	esac
-	if (( canDrawExitCode )) && (( FORCE_SHOW_EXITCODE )); then
-		exitCodeSegment+=" ${lastStatus}"
-	fi
 
+	for (( index = 1; index <= ${#reply}; index++ )); do
+		[[ -n ${replyForeground[index]} ]] || replyForeground[index]=$SEGMENT_FOREGROUND
 
-	exitCodeSegment+="${endOfSegment}"
-
-
-	# Set hostname segment
-	if (( SHOW_HOSTNAME_SEGMENT )) && { [[ -n $SSH_CONNECTION ]] || (( FORCE_SHOW_HOSTNAME_SEGMENT )) }; then
-		hostnameSegment="${beginningOfSegment}%n@%m${endOfSegment}"
-	else
-		hostnameSegment=""
-	fi
-
-	# Set dir segment
-	if (( SHOW_DIR_SEGMENT )); then
-		dirSegment="${beginningOfSegment}%~${endOfSegment}"
-	else
-		dirSegment=""
-	fi
-
-	# Set git segment
-	if (( SHOW_GIT_SEGMENT )) && git rev-parse --is-inside-work-tree &>/dev/null; then
-		_buildGitSegment
-		gitSegment="${beginningOfSegment}${REPLY}${endOfSegment}"
-	else
-		gitSegment=""
-	fi
-	
-	# Set command durration segment
-
-	PROMPT="
-${exitCodeSegment}${hostnameSegment}${dirSegment}${gitSegment}%F{17}${END_RIGHT_ARROW}%f
-${COMMAND_PROMPT}"
-
+		[[ -n ${replyBackground[index]} ]] || replyBackground[index]=$SEGMENT_BACKGROUND
+	done
 }
 
-add-zsh-hook precmd _buildPrompt
+# Segment collector
+_collectSegments() {
+	local lastStatus=$1
+	shift # removes first argument
 
-PROMPT2='%F{16}${TOP_RIGHT_CORNER}${THICK_RIGHT_ARROW}%f '
+	local name
 
-# Transient prompt
-accept-line() {
-	PROMPT=$COMMAND_PROMPT
-	RPROMPT=''
+	local -a collectedText=()
+	local -a collectedForeground=()
+	local -a collectedBackground=()
+
+	for name in "$@"; do
+		_dispatchBuildSegment "$name" "$lastStatus"
+
+		collectedText+=("${reply[@]}")
+		collectedForeground+=("${replyForeground[@]}")
+		collectedBackground+=("${replyBackground[@]}")
+	done
+
+	reply=("${collectedText[@]}")
+	replyForeground=("${collectedForeground[@]}")
+	replyBackground=("${collectedBackground[@]}")
+}
+
+# Segments renderers
+_renderSegments() {
+	local isRight=$1
+	local textArrayName=$2
+	local foregroundArrayName=$3
+	local backgroundArrayName=$4
+
+	local -a segmentsText=("${(@P)textArrayName}")
+	local -a segmentsForeground=("${(@P)foregroundArrayName}")
+	local -a segmentsBackground=("${(@P)backgroundArrayName}")
+
+	local output=""
+	local separator="${LEFT_SEPARATOR}"
+	local -i width=0
+	local -i index
+	local -i count=${#segmentsText}
+
+	if (( isRight && count != 0 )); then
+		separator="${RIGHT_SEPARATOR}"
+		output+="%F{${PROMPT_BACKGROUND}}${separator}"
+		width+=1
+	fi
+	if (( ! isRight && count == 0 )); then
+		output+="%F{${DEFAULT_BACKGROUND}}"
+		output+="%K{${PROMPT_BACKGROUND}}"
+		output+="${separator}"
+		width+=1
+	fi
+
+	for (( index = 1; index <= count; index++ )); do
+		local text=${segmentsText[index]}
+		local foreground=${segmentsForeground[index]}
+		local background=${segmentsBackground[index]}
+		local expandedText="${(%)text}"
+
+		if (( isRight )); then
+			output+="%K{${PROMPT_BACKGROUND}}"
+			output+="%F{${background}}"
+			output+="${separator}"
+			width+=1
+		elif (( index != 1 )); then
+			output+="%K{${background}}"
+			output+="%F{${PROMPT_BACKGROUND}}"
+			output+="${separator}"
+			width+=1
+		fi
+
+		output+="%K{${background}}"
+		output+="%F{${foreground}}"
+		output+=" ${text} "
+		width+=$(( ${#expandedText} + 2 ))
+
+		if (( ! isRight )); then
+			output+="%K{${PROMPT_BACKGROUND}}"
+			output+="%F{${background}}"
+			output+="${separator}"
+			width+=1
+		elif (( index != count )); then
+			output+="%F{${PROMPT_BACKGROUND}}"
+			output+="${separator}"
+			width+=1
+		fi
+
+		output+="%f%k"
+	done
+	if (( ! isRight )); then
+		output+="%f%k"
+		output+="%F{${PROMPT_BACKGROUND}}"
+		output+="${separator}"
+		width+=1
+	fi
+
+	output+="%f%k"
+
+	REPLY=$output
+	REPLY_WIDTH=$width
+}
+
+_buildPadding() {
+	local -i leftWidth=$1
+	local -i rightWidth=$2
+	local symbol=${3:-' '}
+
+	local -i gap=$(( COLUMNS - leftWidth - rightWidth ))
+	local padding
+
+	if (( gap < 2 )); then
+		REPLY=" "
+	elif (( gap < 10 )); then
+		gap+=-2
+		printf -v padding '%*s' "$gap" ''
+		padding=${padding// /$symbol}
+
+		REPLY=" $padding "
+	else 
+		gap+=-4
+		printf -v padding '%*s' "$gap" ''
+		padding=${padding// /$symbol}
+
+		REPLY="  ${padding}  "
+	fi
+}
+
+# Main promp function
+_buildPrompt() {
+	local lastStatus=$1
+
+	_collectSegments "$lastStatus" "${PROMPT_LEFT_SEGMENTS[@]}"
+	
+	local -a leftSegmentsText=("${reply[@]}")
+	local -a leftSegmentsForeground=("${replyForeground[@]}")
+	local -a leftSegmentsBackground=("${replyBackground[@]}")
+
+	_collectSegments "$lastStatus" "${PROMPT_RIGHT_SEGMENTS[@]}"
+
+	local -a rightSegmentsText=("${reply[@]}")
+	local -a rightSegmentsForeground=("${replyForeground[@]}")
+	local -a rightSegmentsBackground=("${replyBackground[@]}")
+
+	_renderSegments 0 leftSegmentsText leftSegmentsForeground leftSegmentsBackground
+
+	local leftPrompt=$REPLY
+	local -i leftPromptWidth=$REPLY_WIDTH
+
+	_renderSegments 1 rightSegmentsText rightSegmentsForeground rightSegmentsBackground
+
+	local rightPrompt=$REPLY
+	local -i rightPromptWidth=$REPLY_WIDTH
+
+	PROMPT=""
+	if (( EXTRA_SPACE_PROMPT )); then
+		PROMPT+="${NEW_LINE}"
+	fi
+
+	if (( COMMAND_ON_NEW_LINE )); then
+		_buildPadding "$leftPromptWidth" "$rightPromptWidth" "$PROMPT_PADDING_SYMBOL"
+		local padding=$REPLY
+
+		PROMPT+="${leftPrompt}"
+		PROMPT+="%F{${PROMPT_BACKGROUND}}${padding}%f"
+		PROMPT+="${rightPrompt}${NEW_LINE}${PROMPT_COMMAND_PREFIX}"
+		RPROMPT=""
+	else
+		PROMPT+="${leftPrompt} "
+		RPROMPT="${rightPrompt}"
+	fi
+}
+
+PROMPT2=$PROMPT2_COMMAND_PREFIX
+RPROMPT2=""
+
+_calculateCommandDuration() {
+	local -F commandEnd=$1
+	
+	if (( COMMAND_START_TIME > 0 && commandEnd > 0 )); then
+		COMMAND_DURATION=$(( commandEnd - COMMAND_START_TIME ))
+	else
+		COMMAND_DURATION=0
+	fi
+
+	COMMAND_START_TIME=0
+}
+
+_recordCommandStart() {
+	COMMAND_START_TIME=$EPOCHREALTIME
+}
+
+_transientAcceptLine() {
+	PROMPT=$PROMPT_COMMAND_PREFIX
+	RPROMPT=""
 
 	zle reset-prompt
 	zle .accept-line
 }
 
-zle -N accept-line
+zle -N accept-line _transientAcceptLine
 
-_transientInterupt() {
+_transientInterrupt() {
 	if zle; then
-		PROMPT=$COMMAND_PROMPT
-		RPROMPT=''
+		PROMPT="${PROMPT_COMMAND_PREFIX} no "
+		RPROMPT=""
 
 		zle reset-prompt
 		zle .send-break
@@ -281,13 +359,29 @@ _transientInterupt() {
 	fi
 }
 
-_enablePromptInteruptTrap() {
-	trap '_transientInterupt' INT
+_enablePromptInterruptTrap() {
+	trap '_transientInterrupt' INT
 }
 
-_disablePromptInteruptTrap() {
+_disablePromptInterruptTrap() {
 	trap - INT
 }
 
-add-zsh-hook precmd _enablePromptInteruptTrap
-add-zsh-hook preexec _disablePromptInteruptTrap
+_promptPrecmd() {
+	local -i lastStatus=$?
+	local -F commandEnd=$EPOCHREALTIME
+
+	_calculateCommandDuration "$commandEnd"
+	_buildPrompt "$lastStatus"
+	_enablePromptInterruptTrap
+}
+
+_promptPreexec() {
+	_disablePromptInterruptTrap
+	_recordCommandStart
+}
+
+add-zsh-hook precmd _promptPrecmd
+
+add-zsh-hook preexec _promptPreexec
+

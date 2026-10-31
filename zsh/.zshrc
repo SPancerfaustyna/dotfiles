@@ -22,3 +22,5 @@ compinit
 
 # 	Prompt
 source "$HOME/.config/zsh/prompt.zsh"
+
+export PATH="$HOME/.local/bin:$PATH"
