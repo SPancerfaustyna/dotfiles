@@ -4,7 +4,7 @@ HISTSIZE=12000
 SAVEHIST=10000
 setopt beep nomatch
 unsetopt autocd extendedglob
-bindkey -v
+bindkey -e
 # End of lines configured by zsh-newuser-install
 
 # Do not save duplicate commands next to each other

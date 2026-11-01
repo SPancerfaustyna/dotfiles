@@ -3,44 +3,8 @@ setopt PROMPT_SUBST
 autoload -Uz add-zsh-hook
 zmodload zsh/datetime
 
-# Symbols
-typeset -g NEW_LINE=$'\n'
-
-typeset -g PROMPT_COMMAND_START_SYMBOL=$'\U000F1639'
-typeset -g PROMPT2_COMMAND_START_SYMBOL=$'\U0002517'
-typeset -g COMMAND_END_SYMBOL=$'\U000F0055'
-typeset -g LEFT_SEPARATOR=$'\uE0B0'
-typeset -g RIGHT_SEPARATOR=$'\uE0B2'
-typeset -g PROMPT_PADDING_SYMBOL='='
-
-typeset -g DEFAULT_FOREGROUND="#270112"
-typeset -g DEFAULT_BACKGROUND="#B85D87"
-typeset -g PROMPT_BACKGROUND="#270112"
-typeset -g PROMPT_PREFIX_FOREGROUND="#B85D87"
-
-typeset -gi COMMAND_ON_NEW_LINE=1
-typeset -gi EXTRA_SPACE_PROMPT=1
-typeset -g PROMPT_COMMAND_PREFIX="%F{${PROMPT_PREFIX_FOREGROUND}}${PROMPT_COMMAND_START_SYMBOL}${COMMAND_END_SYMBOL}%f "
-typeset -g PROMPT2_COMMAND_PREFIX="%F{${PROMPT_PREFIX_FOREGROUND}}${PROMPT2_COMMAND_START_SYMBOL}${COMMAND_END_SYMBOL}%f "
-
-# Segment order
-# hostname, git, durration, exitCode, directory, Text, project, battery, date, os?, terminal?,
-typeset -ga PROMPT_LEFT_SEGMENTS=(
-	exitCode
-	hostname
-	directory
-	git
-#	project
-#	customText
-#	battery
-#	os
-#	shell
-)
-
-typeset -ga PROMPT_RIGHT_SEGMENTS=(
-	commandDuration
-	date
-)
+# Config
+source "${${(%):-%x}:A:h}/promptConfig.zsh"
 
 typeset -gF COMMAND_START_TIME=0
 typeset -gF COMMAND_DURATION=0
@@ -122,8 +86,8 @@ _dispatchBuildSegment() {
 	replyForeground=()
 	replyBackground=()
 
-	SEGMENT_FOREGROUND=$DEFAULT_FOREGROUND
-	SEGMENT_BACKGROUND=$DEFAULT_BACKGROUND
+	SEGMENT_FOREGROUND=$COLOR_DEFAULT_FOREGROUND
+	SEGMENT_BACKGROUND=$COLOR_DEFAULT_BACKGROUND
 
 	case $name in
 		exitCode)			_buildExitCodeSegment "$lastStatus" ;;
@@ -182,19 +146,19 @@ _renderSegments() {
 	local -a segmentsBackground=("${(@P)backgroundArrayName}")
 
 	local output=""
-	local separator="${LEFT_SEPARATOR}"
+	local separator="${SYMBOL_LEFT_SEPERATOR}"
 	local -i width=0
 	local -i index
 	local -i count=${#segmentsText}
 
 	if (( isRight && count != 0 )); then
-		separator="${RIGHT_SEPARATOR}"
-		output+="%F{${PROMPT_BACKGROUND}}${separator}"
+		separator="${SYMBOL_RIGHT_SEPERATOR}"
+		output+="%F{${COLOR_DEFAULT_FOREGROUND}}${separator}"
 		width+=1
 	fi
 	if (( ! isRight && count == 0 )); then
-		output+="%F{${DEFAULT_BACKGROUND}}"
-		output+="%K{${PROMPT_BACKGROUND}}"
+		output+="%F{${COLOR_DEFAULT_BACKGROUND}}"
+		output+="%K{${COLOR_DEFAULT_FOREGROUND}}"
 		output+="${separator}"
 		width+=1
 	fi
@@ -206,13 +170,13 @@ _renderSegments() {
 		local expandedText="${(%)text}"
 
 		if (( isRight )); then
-			output+="%K{${PROMPT_BACKGROUND}}"
+			output+="%K{${COLOR_DEFAULT_FOREGROUND}}"
 			output+="%F{${background}}"
 			output+="${separator}"
 			width+=1
 		elif (( index != 1 )); then
 			output+="%K{${background}}"
-			output+="%F{${PROMPT_BACKGROUND}}"
+			output+="%F{${COLOR_DEFAULT_FOREGROUND}}"
 			output+="${separator}"
 			width+=1
 		fi
@@ -223,12 +187,12 @@ _renderSegments() {
 		width+=$(( ${#expandedText} + 2 ))
 
 		if (( ! isRight )); then
-			output+="%K{${PROMPT_BACKGROUND}}"
+			output+="%K{${COLOR_DEFAULT_FOREGROUND}}"
 			output+="%F{${background}}"
 			output+="${separator}"
 			width+=1
 		elif (( index != count )); then
-			output+="%F{${PROMPT_BACKGROUND}}"
+			output+="%F{${COLOR_DEFAULT_FOREGROUND}}"
 			output+="${separator}"
 			width+=1
 		fi
@@ -237,7 +201,7 @@ _renderSegments() {
 	done
 	if (( ! isRight )); then
 		output+="%f%k"
-		output+="%F{${PROMPT_BACKGROUND}}"
+		output+="%F{${COLOR_DEFAULT_FOREGROUND}}"
 		output+="${separator}"
 		width+=1
 	fi
@@ -277,13 +241,13 @@ _buildPadding() {
 _buildPrompt() {
 	local lastStatus=$1
 
-	_collectSegments "$lastStatus" "${PROMPT_LEFT_SEGMENTS[@]}"
+	_collectSegments "$lastStatus" "${LAYOUT_LEFT_SEGMENTS_ORDER[@]}"
 	
 	local -a leftSegmentsText=("${reply[@]}")
 	local -a leftSegmentsForeground=("${replyForeground[@]}")
 	local -a leftSegmentsBackground=("${replyBackground[@]}")
 
-	_collectSegments "$lastStatus" "${PROMPT_RIGHT_SEGMENTS[@]}"
+	_collectSegments "$lastStatus" "${LAYOUT_RIGHT_SEGMENTS_ORDER[@]}"
 
 	local -a rightSegmentsText=("${reply[@]}")
 	local -a rightSegmentsForeground=("${replyForeground[@]}")
@@ -300,17 +264,17 @@ _buildPrompt() {
 	local -i rightPromptWidth=$REPLY_WIDTH
 
 	PROMPT=""
-	if (( EXTRA_SPACE_PROMPT )); then
-		PROMPT+="${NEW_LINE}"
+	if (( LAYOUT_EXTRA_SPACE_PROMPT )); then
+		PROMPT+="${_SYMBOL_NEW_LINE}"
 	fi
 
-	if (( COMMAND_ON_NEW_LINE )); then
-		_buildPadding "$leftPromptWidth" "$rightPromptWidth" "$PROMPT_PADDING_SYMBOL"
+	if (( LAYOUT_COMMAND_ON_NEW_LINE )); then
+		_buildPadding "$leftPromptWidth" "$rightPromptWidth" "$SYMBOL_PROMPT_PADDING"
 		local padding=$REPLY
 
 		PROMPT+="${leftPrompt}"
-		PROMPT+="%F{${PROMPT_BACKGROUND}}${padding}%f"
-		PROMPT+="${rightPrompt}${NEW_LINE}${PROMPT_COMMAND_PREFIX}"
+		PROMPT+="%F{${COLOR_DEFAULT_BACKGROUND}}${padding}%f"
+		PROMPT+="${rightPrompt}${_SYMBOL_NEW_LINE}${COMMAND_PROMPT_PREFIX}"
 		RPROMPT=""
 	else
 		PROMPT+="${leftPrompt} "
@@ -318,7 +282,7 @@ _buildPrompt() {
 	fi
 }
 
-PROMPT2=$PROMPT2_COMMAND_PREFIX
+PROMPT2=$COMMAND_PROMPT2_PREFIX
 RPROMPT2=""
 
 _calculateCommandDuration() {
@@ -338,7 +302,7 @@ _recordCommandStart() {
 }
 
 _transientAcceptLine() {
-	PROMPT=$PROMPT_COMMAND_PREFIX
+	PROMPT=$COMMAND_PROMPT_PREFIX
 	RPROMPT=""
 
 	zle reset-prompt
@@ -349,7 +313,7 @@ zle -N accept-line _transientAcceptLine
 
 _transientInterrupt() {
 	if zle; then
-		PROMPT="${PROMPT_COMMAND_PREFIX} no "
+		PROMPT="${COMMAND_PROMPT_PREFIX} no "
 		RPROMPT=""
 
 		zle reset-prompt
